@@ -1,6 +1,7 @@
 # Q tables files 
 qtable*
-
+models/
+log_dir/ 
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
