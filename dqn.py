@@ -18,7 +18,7 @@ from blob import BlobEnv
 
 LEARNING_RATE = 1e-3
 REPLAY_MEMORY_SIZE = 50_000
-MIN_REPLAY_MEMORY_SIZE = 10_000
+MIN_REPLAY_MEMORY_SIZE = 500
 MINIBATCH_SIZE = 64
 MODEL_NAME = "256x2"
 DISCOUNT = 0.99  # gamma discount factor
@@ -57,41 +57,6 @@ if not os.path.isdir("models"):
     os.makedirs("models")
 
 
-class ModifiedTensorBoard(TensorBoard):
-
-    # Overriding init to set initial step and writer (we want one log file for all .fit() calls)
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.step = 1
-        self.writer = tf.summary.create_file_writer(self.log_dir)
-
-    # Overriding this method to stop creating default log writer
-    def set_model(self, model):
-        pass
-
-    # Overrided, saves logs with our step number
-    # (otherwise every .fit() will start writing from 0th step)
-    def on_epoch_end(self, epoch, logs=None):
-        self.update_stats(**logs)
-
-    # Overrided
-    # We train for one batch only, no need to save anything at epoch end
-    def on_batch_end(self, batch, logs=None):
-        pass
-
-    # Overrided, so won't close writer
-    def on_train_end(self, _):
-        pass
-
-    # Custom method for saving own metrics
-    # Creates writer, writes custom metrics and closes writer
-    def update_stats(self, **stats):
-        with self.writer.as_default():
-            for key, value in stats.items():
-                tf.summary.scalar(key, value, step=step)
-            self.writer.flush()
-
-
 class DQNAgent:
     def __init__(self):
 
@@ -103,8 +68,8 @@ class DQNAgent:
 
         self.replay_memory = deque(maxlen=REPLAY_MEMORY_SIZE)
 
-        self.tensorboard = ModifiedTensorBoard(
-            log_dir=f"log_dir/{MODEL_NAME}-{int(time.time())}"
+        self.tensorboard = TensorBoard(
+            log_dir=f"log_dir/{MODEL_NAME}-{int(time.time())}", histogram_freq=1
         )
 
         self.target_update_counter = (
@@ -148,7 +113,6 @@ class DQNAgent:
     def train(self, terminal_state, step):
         if len(self.replay_memory) < MIN_REPLAY_MEMORY_SIZE:
             return
-
         minibatch = random.sample(self.replay_memory, MINIBATCH_SIZE)
 
         current_states = (
@@ -197,7 +161,7 @@ class DQNAgent:
             batch_size=MINIBATCH_SIZE,
             verbose=0,
             shuffle=False,
-            callbacks=[self.tensorboard] if terminal_state else None,
+            callbacks=None,  # [self.tensorboard] if terminal_state else None,
         )
 
         # Do we want to copy the weights and update the target network?
@@ -210,6 +174,8 @@ class DQNAgent:
 
 
 agent = DQNAgent()
+
+steps_per_episode = []
 
 for episode in tqdm(range(1, EPISODES + 1), ascii=True, unit="episode"):
     agent.tensorboard.step = episode
@@ -241,24 +207,39 @@ for episode in tqdm(range(1, EPISODES + 1), ascii=True, unit="episode"):
 
     # Append episode reward to a list and log stats (every given number of episodes)
     ep_rewards.append(episode_reward)
-    if not episode % AGGREGATE_STATS_EVERY or episode == 1:
-        average_reward = sum(ep_rewards[-AGGREGATE_STATS_EVERY:]) / len(
-            ep_rewards[-AGGREGATE_STATS_EVERY:]
+    steps_per_episode.append(step)
+    window_size = 5
+    if episode % window_size == 0:
+        print(
+            f"Last {window_size} steps per episode: {sum(steps_per_episode[-window_size:]) / len(steps_per_episode[-window_size:])}"
         )
-        min_reward = min(ep_rewards[-AGGREGATE_STATS_EVERY:])
-        max_reward = max(ep_rewards[-AGGREGATE_STATS_EVERY:])
-        agent.tensorboard.update_stats(
-            reward_avg=average_reward,
-            reward_min=min_reward,
-            reward_max=max_reward,
-            epsilon=epsilon,
+        print(
+            f"Latest {window_size} reward mean: {sum(ep_rewards[-window_size:]) / len(ep_rewards[-window_size:])}"
         )
+        print(
+            f"Worst reward over last {window_size} episodes: {min(ep_rewards[-window_size:])}"
+        )
+        print(
+            f"Best reward over last {window_size} episodes: {max(ep_rewards[-window_size:])}"
+        )
+    # if not episode % AGGREGATE_STATS_EVERY or episode == 1:
+    #     average_reward = sum(ep_rewards[-AGGREGATE_STATS_EVERY:]) / len(
+    #         ep_rewards[-AGGREGATE_STATS_EVERY:]
+    #     )
+    #     min_reward = min(ep_rewards[-AGGREGATE_STATS_EVERY:])
+    #     max_reward = max(ep_rewards[-AGGREGATE_STATS_EVERY:])
+    #     agent.tensorboard.update_stats(
+    #         reward_avg=average_reward,
+    #         reward_min=min_reward,
+    #         reward_max=max_reward,
+    #         epsilon=epsilon,
+    #     )
 
-        # Save model, but only when min reward is greater or equal a set value
-        if min_reward >= MIN_REWARD:
-            agent.model.save(
-                f"models/{MODEL_NAME}__{max_reward:_>7.2f}max_{average_reward:_>7.2f}avg_{min_reward:_>7.2f}min__{int(time.time())}.model"
-            )
+    #     # Save model, but only when min reward is greater or equal a set value
+    #     if min_reward >= MIN_REWARD:
+    #         agent.model.save(
+    #             f"models/{MODEL_NAME}__{max_reward:_>7.2f}max_{average_reward:_>7.2f}avg_{min_reward:_>7.2f}min__{int(time.time())}.model"
+    #         )
 
     # Decay epsilon
     if epsilon > MIN_EPSILON:
