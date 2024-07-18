@@ -18,7 +18,7 @@ from blob import BlobEnv
 
 LEARNING_RATE = 1e-3
 REPLAY_MEMORY_SIZE = 50_000
-MIN_REPLAY_MEMORY_SIZE = 500
+MIN_REPLAY_MEMORY_SIZE = 500  # Should be higher, putting low for debug
 MINIBATCH_SIZE = 64
 MODEL_NAME = "256x2"
 DISCOUNT = 0.99  # gamma discount factor
@@ -30,7 +30,7 @@ MEMORY_FRACTION = 0.20
 EPISODES = 20_000
 
 # Exploration settings
-epsilon = 1  # not a constant, going to be decayed
+epsilon = 1
 EPSILON_DECAY = 0.99975
 MIN_EPSILON = 0.001
 
@@ -48,10 +48,6 @@ random.seed(1)
 np.random.seed(1)
 tf.random.set_seed(1)
 
-# Memory fraction, used mostly when trai8ning multiple agents
-# gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=MEMORY_FRACTION)
-# backend.set_session(tf.Session(config=tf.ConfigProto(gpu_options=gpu_options)))
-
 # Create models folder
 if not os.path.isdir("models"):
     os.makedirs("models")
@@ -68,9 +64,10 @@ class DQNAgent:
 
         self.replay_memory = deque(maxlen=REPLAY_MEMORY_SIZE)
 
-        self.tensorboard = TensorBoard(
-            log_dir=f"log_dir/{MODEL_NAME}-{int(time.time())}", histogram_freq=1
-        )
+        # self.tensorboard = TensorBoard(
+        #     log_dir=f"log_dir/{MODEL_NAME}-{int(time.time())}", histogram_freq=1
+        # )
+        self.tensorboard = None
 
         self.target_update_counter = (
             0  # Keeping track of when to update the target network
@@ -154,7 +151,7 @@ class DQNAgent:
             X.append(current_state)
             y.append(current_qs)
 
-        # Tensorboard only in terminal state
+        # Tensorboard only in terminal state - removed for now
         self.model.fit(
             np.array(X) / 255,
             np.array(y),
@@ -222,24 +219,6 @@ for episode in tqdm(range(1, EPISODES + 1), ascii=True, unit="episode"):
         print(
             f"Best reward over last {window_size} episodes: {max(ep_rewards[-window_size:])}"
         )
-    # if not episode % AGGREGATE_STATS_EVERY or episode == 1:
-    #     average_reward = sum(ep_rewards[-AGGREGATE_STATS_EVERY:]) / len(
-    #         ep_rewards[-AGGREGATE_STATS_EVERY:]
-    #     )
-    #     min_reward = min(ep_rewards[-AGGREGATE_STATS_EVERY:])
-    #     max_reward = max(ep_rewards[-AGGREGATE_STATS_EVERY:])
-    #     agent.tensorboard.update_stats(
-    #         reward_avg=average_reward,
-    #         reward_min=min_reward,
-    #         reward_max=max_reward,
-    #         epsilon=epsilon,
-    #     )
-
-    #     # Save model, but only when min reward is greater or equal a set value
-    #     if min_reward >= MIN_REWARD:
-    #         agent.model.save(
-    #             f"models/{MODEL_NAME}__{max_reward:_>7.2f}max_{average_reward:_>7.2f}avg_{min_reward:_>7.2f}min__{int(time.time())}.model"
-    #         )
 
     # Decay epsilon
     if epsilon > MIN_EPSILON:
